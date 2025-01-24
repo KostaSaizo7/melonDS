@@ -26,6 +26,7 @@
 #include "melonDLDI.h"
 #include "FATStorage.h"
 #include "Utils.h"
+#include "H8300.h"
 
 namespace melonDS
 {
@@ -907,7 +908,7 @@ int CartRetailNAND::ROMCommandStart(NDS& nds, NDSCart::NDSCartSlot& cartslot, co
 
     switch (cmd[0])
     {
-    case 0x81: // write data
+    case 0x81: // write data where H8300 is fully defined in the source file (e.g., .cpp or .h):
         if ((SRAMStatus & (1<<4)) && SRAMWindow >= SRAMBase && SRAMWindow < (SRAMBase+SRAMLength))
         {
             u32 addr = (cmd[1]<<24) | (cmd[2]<<16) | (cmd[3]<<8) | cmd[4];
@@ -1090,7 +1091,6 @@ CartRetailIR::CartRetailIR(const u8* rom, u32 len, u32 chipid, u32 irversion, bo
     CartRetailIR(CopyToUnique(rom, len), len, chipid, irversion, badDSiDump, romparams, std::move(sram), sramlen, userdata)
 {
 }
-
 CartRetailIR::CartRetailIR(
     std::unique_ptr<u8[]>&& rom,
     u32 len,
@@ -1103,7 +1103,8 @@ CartRetailIR::CartRetailIR(
     void* userdata
 ) :
     CartRetail(std::move(rom), len, chipid, badDSiDump, romparams, std::move(sram), sramlen, userdata, CartType::RetailIR),
-    IRVersion(irversion)
+    IRVersion(irversion),
+    IRChip()
 {
 }
 
@@ -1122,29 +1123,25 @@ void CartRetailIR::DoSavestate(Savestate* file)
 
     file->Var8(&IRCmd);
 }
-
+//BARRET BEGIN CHANGES
 u8 CartRetailIR::SPIWrite(u8 val, u32 pos, bool last)
 {
+	//Kind of like an init sequence, we only really care about commands after this first one
     if (pos == 0)
     {
         IRCmd = val;
         return 0;
     }
-
     // TODO: emulate actual IR comm
-
-    switch (IRCmd)
-    {
-    case 0x00: // pass-through
-        return CartRetail::SPIWrite(val, pos-1, last);
-
-    case 0x08: // ID
-        return 0xAA;
+    if (IRCmd == 0){
+	return CartRetail::SPIWrite(val, pos-1, last);
     }
-
-    return 0;
+    //Yay I am doing the TODO :) Thanks to the giants that came before me!
+    else{
+	return IRChip.handleSPI(IRCmd, val, pos, last);
+    }
 }
-
+//BARRET END CHANGES
 CartRetailBT::CartRetailBT(const u8* rom, u32 len, u32 chipid, ROMListEntry romparams, std::unique_ptr<u8[]>&& sram, u32 sramlen, void* userdata) :
     CartRetailBT(CopyToUnique(rom, len), len, chipid, romparams, std::move(sram), sramlen, userdata)
 {
