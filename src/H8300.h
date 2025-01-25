@@ -28,7 +28,7 @@ public:
 	int configureSerialPort();
 	int debugSerialPort();
 	int readSerialPort();
-	int sendSerialPort();
+	int sendSerialPort(u8 len);
 
 private:
 	int sessionStatus = 0;
@@ -40,7 +40,6 @@ private:
 
 
 	char sendBuf[0xB8];
-	u8 sendLen;
 };
 
 #endif

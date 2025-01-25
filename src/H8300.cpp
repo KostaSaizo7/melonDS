@@ -100,7 +100,7 @@ int H8300::configureSerialPort(){
 
 	memset(buf, 0, sizeof(buf));
 	//This should be configures in options
-	const char *portname = "/dev/ttyUSB1";
+	const char *portname = "/dev/ttyUSB0";
 
 	//sudo chmod 666 /dev/ttyUSB0
 	fd = open(portname, O_RDWR | O_NOCTTY | O_NDELAY);
@@ -153,7 +153,7 @@ int H8300::configureSerialPort(){
 }
 
 
-//Working
+//Working old method that tanks FPS
 /*
 int H8300::readSerialPort(){
 	char tempBuf[0xB8];
@@ -198,7 +198,7 @@ int H8300::readSerialPort(){
 
 int H8300::readSerialPort(){
 
-
+//	printf("beginning read");
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	long lastRxTime = tv.tv_usec;
@@ -209,7 +209,7 @@ int H8300::readSerialPort(){
 	u8 pointer = 0;
 
 	if (len > 0){
-		printf("\nConstructing a packet: %d + ", len);
+//		printf("\nConstructing a packet: %d + ", len);
 
 		lastRxTime = tv.tv_usec;
 		for(int i = 0; i < len; i++){
@@ -221,18 +221,15 @@ int H8300::readSerialPort(){
 
 		//We are now recieving a packet
 		long cond = tv.tv_usec - lastRxTime;
-		while(cond < 4000){
+		while(cond < 3500){
 			//printf("last checkd cond: %ld\n", cond);
 			cond = tv.tv_usec - lastRxTime;
 			gettimeofday(&tv, NULL);
-
 			len = read(fd, tempBuf, sizeof(tempBuf));
-
-
 			if (len < 0){ continue;}
 
 			else{
-				printf("%d + ", len);
+			//	printf("%d + ", len);
 				lastRxTime = tv.tv_usec;
 				for(int i = 0; i < len; i++){
 					buf[pointer + i] = tempBuf[i];
@@ -244,8 +241,8 @@ int H8300::readSerialPort(){
 
 //		printf("STOPPED\n");
 //		get
-		tcflush(fd, TCIOFLUSH);
-		tcflush(fd, TCIFLUSH);
+	//	tcflush(fd, TCIOFLUSH);
+	//	tcflush(fd, TCIFLUSH);
 	}
 
 
@@ -253,35 +250,43 @@ int H8300::readSerialPort(){
 
 	if (recvLen == 0) return 0;
 
-	printf("\nrecieved a packet of len: %d\n", recvLen);
+	printf("\nRecieved %d Bytes \n", recvLen);
 
-//	for (int i = 0; i < recvLen; i++){
-//		printf("0x%02x ", (u8)buf[i] ^ 0xaa);
-//	}
+	for (int i = 0; i < recvLen; i++){
+		printf("0x%02x ", (u8)buf[i] ^ 0xaa);
+	}
 	printf("\n");
 	return recvLen;
 }
 
-int H8300::sendSerialPort(){
-tcflush(fd, TCIOFLUSH);
+int H8300::sendSerialPort(u8 sendLen){
+//	tcflush(fd, TCIFLUSH);
 
 
 
-//	printf("\n Sending %d Bytes: %d\n", sendLen);
-	/*
+	printf("\n Sending %d Bytes: \n", sendLen);
 	for (int i = 0; i < sendLen; i++){
-
 		printf("0x%02x ", (u8)sendBuf[i] ^ 0xaa);
-
 	}
-	printf("\n");*/
-	u8 written = write(fd, sendBuf, sendLen);
+	printf("\n");
 
+
+	//printf("DS is sending buf0 0x%02x \n", (u8) sendBuf[0]);
+	if ((u8)sendBuf[0] == 94){
+		printf("Immediate Disconnect found, waiting.");
+		sleep(1);
+		printf("Exiting...");
+	}
+
+	int written = write(fd, sendBuf, sendLen);
+	//sendBuf[0] = 0;
+	if (written == -1){
+
+		perror("err: ");
+	}
 	//printf("wrote %d bytes\n", written);
 
-//	getchar();
-
-
+//	tcflush(fd, TCIOFLUSH);
 	return 0;
 }
 
@@ -306,7 +311,6 @@ u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
 
 
 
-//    printf("IRCmd: %d		val:%02x   pos: %ld   last: %d\n", IRCmd, val, pos, last);
     switch (IRCmd)
     {
     case 0x00: // pass-through
@@ -316,19 +320,27 @@ u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
 
     case 0x01:
 
+//	printf("	IRCMD1 pos: %02x, last: %d, val: 0x%02x \n", pos, last, (u8)val);
 	if (pos == 0){
 		printf("beginning new spi seq\n");
 		return 0x00;
 	}
 	if (pos == 1){
+
+
+
+		memset(buf, 0, sizeof(buf)); //we can clear our read buffer because we are sending now. (make easier)
+
+
+
 		recvLen = readSerialPort();
 
-//		printf("	pos 1: found %d bytes\n", recvLen);
+		printf("	STARTING CMD1 SEQUENCE\n", recvLen);
 		return recvLen;
 	}
 	else{
 		u8 data = (unsigned char)buf[pos-2];
-	//	printf("	pos: %02x, last: %d, dgettimeofday(&tv, NULL);ata: 0x%02x \n", pos, last, data);
+		printf("	pos: %02x, last: %d, dat: 0x%02x \n", pos, last, data^0xaa);
 		return data;
 	}
 	return 0x00;
@@ -337,19 +349,22 @@ u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
 	//printf("                        press any key to continue.");
 	//getchar();
 
-	if (pos == 0){
+	if (pos == 1){
 
-	//	memset(buf, 0, sizeof(buf)); //we can clear our read buffer because we are sending now. (make easier)
-	//	recvLen = 0;
-
+		printf("	STARTING CMD2 SEQUENCE\n", recvLen);
 	}
+	if (pos == 0){
+		recvLen = 0;
+	}
+
+//	printf("	pos: %d, last: %d, val: 0x%02x \n", pos, last, (u8)val ^ 0xaa);
 	else{
-		sendBuf[pos-1] = val; //Load the spi packet into the buffer;
+		sendBuf[pos-1] = (u8) val; //Load the spi packet into the buffer;
 	}
 
 	if (last == 1){
-		sendLen = pos;
-		sendSerialPort();
+		u8 sendLen = pos;
+		sendSerialPort(sendLen);
 	}
 	return 0x00;
     case 0x08: // ID
@@ -357,7 +372,7 @@ u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
 		printf("Configuring port during IR init sequence\n");
 		configureSerialPort();
 
-		tcflush(fd, TCIFLUSH);
+		//tcflush(fd, TCIFLUSH);
 	}
 
         return 0xAA;
