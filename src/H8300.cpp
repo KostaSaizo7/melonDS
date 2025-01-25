@@ -15,20 +15,13 @@
 
 
 H8300::H8300(){
-	printf("H8/300 has been created");
-    	//debugSerialPort();
+    printf("H8/300 has been created");
+    //debugSerialPort();
 }
 
 H8300::~H8300(){
-
-
 	close(fd);
-
 	printf("H8/300 has been killed");
-}
-
-void H8300::speak(){
-	printf("H8 CHIP IS SPEAKING");
 }
 
 int H8300::debugSerialPort(){
@@ -94,15 +87,110 @@ int H8300::debugSerialPort(){
 }
 
 
-//This should be called dynamically??
+//Separate the different operating modes.
+u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
+    switch (IRMode){
+        case 0:
+            return handleSPICompatibility(IRCmd, val, pos, last);
+        case 1:
+            return handleSPISerial(IRCmd, val, pos, last);
+        case 2:
+            return handleSPIUDP(IRCmd, val, pos, last);
+    }
+    return handleSPICompatibility(IRCmd, val, pos, last);
+}
+
+
+//Exact copy of original handling in NDSCart.cpp
+u8 H8300::handleSPICompatibility(u8& IRCmd, u8& val, u32&pos, bool& last){
+    if (pos == 0)
+    {
+        IRCmd = val;
+        return 0;
+    }
+    switch (IRCmd)
+    {
+    case 0x00: //Should not happen
+        return 0xFF;
+    case 0x08: // ID
+        return 0xAA;
+    }
+
+    return 0;
+}
+
+
+//Serial Forwarding
+u8 H8300::handleSPISerial(u8& IRCmd, u8& val, u32&pos, bool& last){
+    switch (IRCmd)
+    {
+    case 0x00: // pass-through. This should never occur and should (and is) intercepted by NDSCart.cpp
+        return 0xFF;
+    case 0x01:
+	//This should never occur. Pos 0 is used to "load" the IRCmd in the first place.
+	if (pos == 0){
+		return 0x00;
+	}
+	if (pos == 1){
+		memset(buf, 0, sizeof(buf)); //needed???
+		recvLen = readSerialPort();
+		return recvLen;
+	}
+	else{
+		u8 data = (unsigned char)buf[pos-2];
+		return data;
+	}
+	return 0x00;
+
+    case 0x02:
+	if (pos == 0){
+	    recvLen = 0;
+	}
+	else{
+	    sendBuf[pos-1] = (u8) val; //Load the spi packet into the buffer;
+    }
+
+	if (last == 1){
+		u8 sendLen = pos;
+		sendSerialPort(sendLen);
+    }
+	return 0x00;
+    case 0x08: //Maybe there is a better place to handle this, but I do not really see any issue.
+	if (fd <0){
+		printf("Configuring port during IR init sequence\n");
+		configureSerialPort();
+	}
+        return 0xAA; // Version check.
+    }
+    return 0x00;
+}
+
+
+
+//TODO Implement UDP mode. For now, just set it as compatibility mode.
+u8 H8300::handleSPIUDP(u8& IRCmd, u8& val, u32&pos, bool& last){
+    if (pos == 0)
+    {
+        IRCmd = val;
+        return 0;
+    }
+    switch (IRCmd)
+    {
+    case 0x00: // should not happen
+        return 0xff;
+
+    case 0x08: // ID
+        return 0xAA;
+    }
+
+    return 0;
+}
+
+/////////////////////////////////////////////////////////////////////
 int H8300::configureSerialPort(){
-
-
 	memset(buf, 0, sizeof(buf));
-	//This should be configures in options
-	const char *portname = "/dev/ttyUSB0";
-
-	//sudo chmod 666 /dev/ttyUSB0
+	//This should be configured in options
+	const char *portname = "/dev/ttyUSB0";    //sudo chmod 666 /dev/ttyUSB0
 	fd = open(portname, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (fd == -1){
 		printf("H8/300 failed to open the serial port\n");
@@ -114,19 +202,15 @@ int H8300::configureSerialPort(){
 	tcgetattr(fd, &options);
 	if (tcgetattr(fd, &options) == -1){
 		printf("H8/300 failed to configure the serial port\n");
+        perror("Err:");
 		close(fd);
 		return 1;
 	}
-	//Set walker params. We can potentially make this different if we want to talk to walker EMUS
 
-
-	//baud rate
+	//Meant to optimize these to the p-walker. May or may not be the same for all IR peripheral comms.
 	cfsetispeed(&options, B115200);
 	cfsetospeed(&options, B115200);
 
-
-	//no parity, 1 stop bit, clear char size mask, 8 data bits, no hardware flow ctrl,
-	// enable reciever, ignore modem control lines
 	options.c_cflag &= ~PARENB;
 	options.c_cflag &= ~CSTOPB;
 	options.c_cflag &= ~CSIZE;
@@ -136,248 +220,76 @@ int H8300::configureSerialPort(){
 	options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 	options.c_iflag &= ~(IXON | IXOFF | IXANY);  // Disable software flow control
 	options.c_iflag &= ~(ICRNL | INLCR);
-//	options.c_cc[VTIME] = 1;
+//	options.c_cc[VTIME] = 1; not needed in non-blocking mode
 //	options.c_cc[VMIN] = 0;
-
-
-
 	options.c_iflag = 0;
 	options.c_oflag = 0;
-
 	tcflush(fd, TCIOFLUSH);
 	tcflush(fd, TCIFLUSH);
 	tcsetattr(fd, TCSANOW, &options);
-
-
 	return 0;
 }
 
 
-//Working old method that tanks FPS
-/*
-int H8300::readSerialPort(){
-	char tempBuf[0xB8];
-	int len = 1;  //read(fd, tempBuf, sizeof(tempBuf));
-	u8 pointer = 0;
-	while (len > 0){
 
-		usleep(4000);
-		len = read(fd, tempBuf, sizeof(tempBuf));
-
-		if (len < 0){
-	//		perror("err:");
-			break;
-		}
-
-		for(int i = 0; i < len; i++){
-
-			buf[pointer + i] = tempBuf[i];
-
-		}
-		pointer = pointer + len;
-	}
-
-	tcflush(fd, TCIOFLUSH);
-	tcflush(fd, TCIFLUSH);
-	recvLen = pointer;
-
-	if (recvLen == 0) return 0;
-
-
-	printf("\nrecieved a packet of len: %d\n", recvLen);
-
-	for (int i = 0; i < recvLen; i++){
-		printf("0x%02x ", (u8)buf[i] ^ 0xaa);
-	}
-	printf("\n");
-
-
-	return recvLen;
-}
-*/
-
-int H8300::readSerialPort(){
-
-//	printf("beginning read");
-	struct timeval tv;
+long long H8300::getTimeUS(){
+    struct timeval tv;
 	gettimeofday(&tv, NULL);
-	long lastRxTime = tv.tv_usec;
+	long long t = (tv.tv_sec * 1000000LL) + tv.tv_usec;
+    return t;
+}
 
 
+int H8300::readSerialPort(){
 	char tempBuf[0xB8];
 	int len = read(fd, tempBuf, sizeof(tempBuf));
 	u8 pointer = 0;
-
+    long long lastRxTime = getTimeUS();
 	if (len > 0){
-//		printf("\nConstructing a packet: %d + ", len);
-
-		lastRxTime = tv.tv_usec;
+		lastRxTime = getTimeUS();
 		for(int i = 0; i < len; i++){
 			buf[pointer + i] = tempBuf[i];
 		}
 		pointer = pointer + len;
-
-
-
-		//We are now recieving a packet
-		long cond = tv.tv_usec - lastRxTime;
-		while(cond < 3500){
-			//printf("last checkd cond: %ld\n", cond);
-			cond = tv.tv_usec - lastRxTime;
-			gettimeofday(&tv, NULL);
+		while((getTimeUS() - lastRxTime) < 3500){ //Maybe this can be fine tuned
 			len = read(fd, tempBuf, sizeof(tempBuf));
 			if (len < 0){ continue;}
-
 			else{
-			//	printf("%d + ", len);
-				lastRxTime = tv.tv_usec;
+				lastRxTime = getTimeUS();
 				for(int i = 0; i < len; i++){
 					buf[pointer + i] = tempBuf[i];
 				}
 				pointer = pointer + len;
 			}
-
 		}
-
-//		printf("STOPPED\n");
-//		get
-	//	tcflush(fd, TCIOFLUSH);
-	//	tcflush(fd, TCIFLUSH);
 	}
 
-
 	recvLen = pointer;
-
 	if (recvLen == 0) return 0;
-
+    /*
 	printf("\nRecieved %d Bytes \n", recvLen);
-
 	for (int i = 0; i < recvLen; i++){
 		printf("0x%02x ", (u8)buf[i] ^ 0xaa);
 	}
-	printf("\n");
+	printf("\n");*/
 	return recvLen;
 }
 
+
 int H8300::sendSerialPort(u8 sendLen){
-//	tcflush(fd, TCIFLUSH);
-
-
-
-	printf("\n Sending %d Bytes: \n", sendLen);
+/*	printf("\n Sending %d Bytes: \n", sendLen);
 	for (int i = 0; i < sendLen; i++){
 		printf("0x%02x ", (u8)sendBuf[i] ^ 0xaa);
 	}
-	printf("\n");
+	printf("\n");*/
 
-
-	//printf("DS is sending buf0 0x%02x \n", (u8) sendBuf[0]);
 	if ((u8)sendBuf[0] == 94){
-		printf("Immediate Disconnect found, waiting.");
-		sleep(1);
-		printf("Exiting...");
+        usleep(10000);  /*Necessary hack. Could be a slower time possibly, but is less than one frame length. This needs to halt
+		                 the game card from piggybacking this '94/ 0xf4 immediate disconnect' onto is previous send*/
 	}
-
 	int written = write(fd, sendBuf, sendLen);
-	//sendBuf[0] = 0;
 	if (written == -1){
-
 		perror("err: ");
 	}
-	//printf("wrote %d bytes\n", written);
-
-//	tcflush(fd, TCIOFLUSH);
 	return 0;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-//A botched implementation
-u8 H8300::handleSPI(u8& IRCmd, u8& val, u32&pos, bool& last){
-
-   // readSerialPort();
-
-
-
-
-
-    switch (IRCmd)
-    {
-    case 0x00: // pass-through
-	printf("CRITICAL ERROR IN H8300 emu, should not have recieved 0x00 command!");
-        return 0xFF;
-
-
-    case 0x01:
-
-//	printf("	IRCMD1 pos: %02x, last: %d, val: 0x%02x \n", pos, last, (u8)val);
-	if (pos == 0){
-		printf("beginning new spi seq\n");
-		return 0x00;
-	}
-	if (pos == 1){
-
-
-
-		memset(buf, 0, sizeof(buf)); //we can clear our read buffer because we are sending now. (make easier)
-
-
-
-		recvLen = readSerialPort();
-
-		printf("	STARTING CMD1 SEQUENCE\n", recvLen);
-		return recvLen;
-	}
-	else{
-		u8 data = (unsigned char)buf[pos-2];
-		printf("	pos: %02x, last: %d, dat: 0x%02x \n", pos, last, data^0xaa);
-		return data;
-	}
-	return 0x00;
-
-    case 0x02:
-	//printf("                        press any key to continue.");
-	//getchar();
-
-	if (pos == 1){
-
-		printf("	STARTING CMD2 SEQUENCE\n", recvLen);
-	}
-	if (pos == 0){
-		recvLen = 0;
-	}
-
-//	printf("	pos: %d, last: %d, val: 0x%02x \n", pos, last, (u8)val ^ 0xaa);
-	else{
-		sendBuf[pos-1] = (u8) val; //Load the spi packet into the buffer;
-	}
-
-	if (last == 1){
-		u8 sendLen = pos;
-		sendSerialPort(sendLen);
-	}
-	return 0x00;
-    case 0x08: // ID
-	if (fd <0){
-		printf("Configuring port during IR init sequence\n");
-		configureSerialPort();
-
-		//tcflush(fd, TCIFLUSH);
-	}
-
-        return 0xAA;
-    }
-
-//    printf("Unhandled: %d		val:%d   pos: %ld   last: %d\n", IRCmd, val, pos, last);
-    return 0x00;
 }
