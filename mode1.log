@@ -1,0 +1,43 @@
+melonDS 1.0
+https://melonds.kuribo64.net
+Opened "/home/barret/.config/melonDS/melonDS.toml" with FileMode 0x1 (effective mode "rb")
+Opened "/home/barret/.config/melonDS/melonDS.toml" with FileMode 0x20 (effective mode "ab")
+Opened "/home/barret/.config/melonDS/melonDS.toml" with FileMode 0x1 (effective mode "rb")
+MP comm init OK
+PCap: lib libpcap.so.1, init successful
+PCap: failed to open adapter: eth0: You don't have permission to perform this capture on that device (socket: Operation not permitted)
+Audio output frequency: 48000 Hz
+Created a OpenGL context
+GL_VENDOR: Mesa
+GL_RENDERER: NV166
+GL_VERSION: 4.3 (Core Profile) Mesa 24.3.4-arch1.1
+GL_SHADING_LANGUAGE_VERSION: 4.30
+Opened "/home/barret/Downloads/black.nds" with FileMode 0x1 (effective mode "rb")
+Opened "/home/barret/Downloads/black.sav" with FileMode 0x1 (effective mode "rb")
+Opened "/home/barret/Downloads/black.sav" with FileMode 0x1 (effective mode "rb")
+Opened "/home/barret/Downloads/black.sav" with FileMode 0x20 (effective mode "ab")
+H8/300 has been created
+
+Welcome to the H8300 UDP debugger.
+1. cfg1 
+2. cfg2
+3. send ping
+4. rx loop
+9. exit
+Program running on incoming port 12345, sending messages to 127.0.0.1:12346
+
+
+Welcome to the H8300 UDP debugger.
+1. cfg1 
+2. cfg2
+3. send ping
+4. rx loop
+9. exit
+
+
+Welcome to the H8300 UDP debugger.
+1. cfg1 
+2. cfg2
+3. send ping
+4. rx loop
+9. exit
